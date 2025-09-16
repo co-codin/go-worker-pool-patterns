@@ -27,6 +27,7 @@ func (dp *DynamicPool) startWorker() {
 	dp.mu.Lock()
 	dp.active++
 	dp.mu.Unlock()
+
 	dp.wg.Add(1)
 	go func() {
 		defer dp.wg.Done()
@@ -44,13 +45,18 @@ func (dp *DynamicPool) startWorker() {
 
 func (dp *DynamicPool) AddJob(job int) {
 	dp.jobQueue <- job
+
+	need := false
 	dp.mu.Lock()
 	if len(dp.jobQueue) > dp.active && dp.active < dp.maxWorkers {
-		dp.startWorker()
+		need = true
 	}
 	dp.mu.Unlock()
-}
 
+	if need {
+		dp.startWorker()
+	}
+}
 
 func (dp *DynamicPool) Shutdown() {
 	close(dp.jobQueue)
@@ -60,7 +66,7 @@ func (dp *DynamicPool) Shutdown() {
 func main() {
 	dp := NewDynamicPool(2, 5)
 	for i := 1; i <= 10; i++ {
-		dp.AddJob(1)
+		dp.AddJob(i)
 	}
 	dp.Shutdown()
 }
