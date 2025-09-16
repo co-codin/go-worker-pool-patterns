@@ -1,56 +1,59 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"time"
-	"sync"
 )
 
-//Fans tasks out to multiple workers for parallel processing,
-//then fans results in to a single collector.
-//Great for independent, parallelizable tasks like batch API requests.
+func square(a int) int {
 
-type Task struct {
-	ID int
+	return a * a
 }
 
-func processTask(task Task) string {
-	time.Sleep(time.Second)
-	return fmt.Sprintf("Processed task %d", task.ID)
-}
-
-func worker(tasks <- chan Task, results chan<- string, wg *sync.WaitGroup) {
-	defer wg.Done()
-	for task := range tasks {
-		results <- processTask(task)
+// CPU
+func timeConsuming1() {
+	counter := 0
+	for range 10000000 {
+		counter++
 	}
+}
+
+// IO
+func timeConsuming2() {
+	time.Sleep(100 * time.Millisecond)
+}
+
+func timeConsuming() {
+	timeConsuming2()
+}
+
+var numWorkers = 10
+
+func generate() chan int {
+	in := make(chan int)
+
+	go func() {
+		for i := range 100 {
+			in <- i
+		}
+		close(in)
+	}()
+
+	return in
 }
 
 func main() {
-	tasks := make(chan Task, 5)
-	results := make(chan string, 5)
+	in := generate()
 
-	var wg sync.WaitGroup
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
 
-	wg.Add(3)
-
-	for i := 0; i < 3; i++ {
-		go worker(tasks, results, &wg)
+	now := time.Now()
+	for v := range fanin(ctx, fanout(in, numWorkers, square)) {
+		fmt.Println(v)
 	}
+	timeFanin := time.Since(now)
 
-	go func() {
-		for i := 1; i <= 5; i++ {
-			tasks <- Task{ID: i}
-		}
-		close(tasks)
-	}()
-
-	go func() {
-		wg.Wait()
-		close(results)
-	}()
-
-	for result := range results {
-		fmt.Println(result)
-	}
+	fmt.Println(timeFanin)
 }
