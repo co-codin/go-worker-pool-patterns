@@ -1,11 +1,13 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
-func tee(in <-chan int, numChans int) []chan int {
+func tee(ctx context.Context, in <-chan int, numChans int) []chan int {
 	chans := make([]chan int, numChans)
 
 	for i := range numChans {
@@ -17,17 +19,32 @@ func tee(in <-chan int, numChans int) []chan int {
 			defer close(chans[i])
 		}
 
-		for val := range in {
-			wg := &sync.WaitGroup{}
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case val, ok := <-in:
+				if !ok {
+					return
+				}
 
-			for i := range numChans {
-				wg.Add(1)
-				go func() {
-					defer wg.Done()
-					chans[i] <- val
-				}()
+				wg := &sync.WaitGroup{}
+
+				for i := range numChans {
+					wg.Add(1)
+					go func() {
+						defer wg.Done()
+
+						select {
+						case chans[i] <- val:
+						case <-ctx.Done():
+							return
+						}
+
+					}()
+				}
+				wg.Wait()
 			}
-			wg.Wait()
 		}
 	}()
 
@@ -48,7 +65,10 @@ func generate() chan int {
 }
 
 func main() {
-	chans := tee(generate(), 2)
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second*2)
+	defer cancel()
+
+	chans := tee(ctx, generate(), 2)
 
 	wg := &sync.WaitGroup{}
 	wg.Add(2)
