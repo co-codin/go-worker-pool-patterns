@@ -1,6 +1,9 @@
 package main
 
-
+import (
+	"fmt"
+	"sync"
+)
 
 func generate() chan int {
 	ch := make(chan int)
@@ -17,8 +20,26 @@ func generate() chan int {
 
 func main() {
 
-
-	teech := New(3)
+	teech := New(3, Slow)
 
 	chans := teech.Execute(generate())
+
+	wg := &sync.WaitGroup{}
+	wg.Add(2)
+
+	go func() {
+		defer wg.Done()
+		for v := range chans[0] {
+			fmt.Println("logging...", v)
+		}
+	}()
+
+	go func() {
+		defer wg.Done()
+		for v := range chans[1] {
+			fmt.Println("metrics...", v)
+		}
+	}()
+
+	wg.Wait()
 }

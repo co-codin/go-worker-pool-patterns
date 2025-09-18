@@ -4,13 +4,19 @@ import (
 	"sync"
 )
 
+const (
+	Fast = iota
+	Slow
+)
+
 type TeeChan struct {
 	chans    []chan int
 	numChans int
 	wgs      []*sync.WaitGroup
+	wg       WaitG
 }
 
-func New(numChans int) *TeeChan {
+func New(numChans int, ttype int) *TeeChan {
 	chans := make([]chan int, numChans)
 	wgs := make([]*sync.WaitGroup, numChans)
 
@@ -19,10 +25,20 @@ func New(numChans int) *TeeChan {
 		wgs[i] = &sync.WaitGroup{}
 	}
 
+	var wg WaitG
+	if ttype == Fast {
+		wg = &WaitGStub{}
+	}
+
+	if ttype == Slow {
+		wg = &WaitGNormal{}
+	}
+
 	return &TeeChan{
 		numChans: numChans,
 		wgs:      wgs,
 		chans:    chans,
+		wg:       wg,
 	}
 }
 
@@ -41,12 +57,15 @@ func (t *TeeChan) Execute(in chan int) []chan int {
 		for val := range in {
 			for i := range t.numChans {
 				t.wgs[i].Add(1)
+				t.wg.Add(1)
 				go func() {
 					defer t.wgs[i].Done()
+					defer t.wg.Done()
 					t.chans[i] <- val
 				}()
 
 			}
+			t.wg.Wait()
 		}
 	}()
 
